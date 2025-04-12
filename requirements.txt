@@ -1,0 +1,5 @@
+networkx>=2.6.0
+matplotlib>=3.4.0
+watchdog>=2.1.0
+pyvis>=0.1.9
+# pygraphviz>=1.7.0  # Optional, for hierarchical layouts
