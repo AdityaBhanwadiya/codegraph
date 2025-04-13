@@ -287,14 +287,15 @@ async def visualize_code_graph_and_save(
         })
     
 @mcp.tool()
-async def store_code_graph(directory_path: str, project_name: str = None, skip_summaries: bool = True) -> str:
+async def store_code_graph(directory_path: str, project_name: str = None, skip_summaries: bool = True, store_embeddings: bool = True) -> str:
     """
-    Store a code knowledge graph in the database.
+    Store a code knowledge graph in the database and optionally create vector embeddings.
     
     Args:
         directory_path: Path to the directory containing Python code
         project_name: Name to identify the project (defaults to directory name)
         skip_summaries: Skip generating summaries to avoid timeouts (default: True)
+        store_embeddings: Whether to create and store vector embeddings (default: True)
         
     Returns:
         The graph ID if successful, error message otherwise
@@ -321,6 +322,12 @@ async def store_code_graph(directory_path: str, project_name: str = None, skip_s
         graph_id = str(uuid.uuid4())
         logger.info(f"Generated graph ID: {graph_id}")
         
+        # Extract docstrings if needed for embeddings or non-skip summaries
+        all_docstrings = {}
+        if not skip_summaries or store_embeddings:
+            logger.info(f"Extracting docstrings from {directory_path}")
+            all_docstrings = extract_docstrings_from_directory(directory_path)
+        
         # Store metadata in MongoDB
         metadata = {
             "graph_id": graph_id,
@@ -332,24 +339,67 @@ async def store_code_graph(directory_path: str, project_name: str = None, skip_s
             "edges": []
         }
         
-        # Process nodes - simplified to avoid timeouts
+        # Process nodes with docstrings if enabled
         nodes_data = []
-        for node in graph.nodes:
-            # Generate a unique ID for this node
-            node_id = f"{graph_id}_{node}"
+        if not skip_summaries and all_docstrings:
+            logger.info("Processing nodes with docstrings")
+            from search.text_preprocessor import preprocess_docstring_data
+            from segregate.segregateDocString import parse_docstring
             
-            # Get node attributes
-            node_attrs = graph.nodes[node]
-            node_type = node_attrs.get("type", "unknown")
-            
-            # Add to nodes data
-            nodes_data.append({
-                "id": node_id,
-                "name": node,
-                "type": node_type,
-                "attributes": node_attrs,
-                "description": ""  # Skip detailed descriptions for now
-            })
+            for node in graph.nodes:
+                # Generate a unique ID for this node
+                node_id = f"{graph_id}_{node}"
+                
+                # Get node attributes
+                node_attrs = graph.nodes[node]
+                node_type = node_attrs.get("type", "unknown")
+                
+                # Get docstring if available
+                node_data = {
+                    "id": node_id,
+                    "name": node,
+                    "type": node_type,
+                    "attributes": node_attrs,
+                    "description": ""  # Default empty description
+                }
+                
+                # Process docstring for function nodes
+                if isinstance(node, str):
+                    docstring = get_function_docstring(node, all_docstrings)
+                    if docstring and docstring != f"Function '{node}' not found.":
+                        # Parse the docstring
+                        parsed_docstring = parse_docstring(docstring)
+                        
+                        # Preprocess the parsed docstring
+                        preprocessed_docstring = preprocess_docstring_data(parsed_docstring)
+                        
+                        # Store both the original and preprocessed versions
+                        node_data["docstring_data"] = parsed_docstring
+                        node_data["preprocessed_docstring_data"] = preprocessed_docstring
+                        
+                        # Use the summary from parsed docstring as the description
+                        node_data["description"] = preprocessed_docstring.get('summary', '')
+                
+                nodes_data.append(node_data)
+        else:
+            # Simplified node processing when skipping summaries
+            logger.info("Processing nodes with simplified data (skipping docstrings)")
+            for node in graph.nodes:
+                # Generate a unique ID for this node
+                node_id = f"{graph_id}_{node}"
+                
+                # Get node attributes
+                node_attrs = graph.nodes[node]
+                node_type = node_attrs.get("type", "unknown")
+                
+                # Add to nodes data
+                nodes_data.append({
+                    "id": node_id,
+                    "name": node,
+                    "type": node_type,
+                    "attributes": node_attrs,
+                    "description": ""  # Skip detailed descriptions
+                })
         
         metadata["nodes"] = nodes_data
         logger.info(f"Processed {len(nodes_data)} nodes")
@@ -378,13 +428,111 @@ async def store_code_graph(directory_path: str, project_name: str = None, skip_s
         # Store metadata in MongoDB
         db_manager.mongo_collection.insert_one(metadata)
         
-        return json.dumps({
+        # Store vector embeddings if enabled
+        if store_embeddings and db_manager.vector_db:
+            logger.info("Storing vector embeddings for nodes and edges")
+            
+            # Create lists for vector storage
+            node_ids = []
+            node_texts = []
+            node_metadata = []
+            
+            # Process nodes for vector embeddings - include ALL nodes, even without docstrings
+            for node in nodes_data:
+                # Create a node text representation for embedding
+                node_name = node["name"]
+                node_type = node["type"]
+                base_text = f"Node: {node_name} (Type: {node_type})"
+                
+                # If we have docstring data, use it to enrich the text
+                if "preprocessed_docstring_data" in node:
+                    from search.text_preprocessor import get_combined_text_for_embedding
+                    preprocessed_data = node["preprocessed_docstring_data"]
+                    docstring_text = get_combined_text_for_embedding(preprocessed_data)
+                    
+                    # Combine base node info with docstring data
+                    node_text = f"{base_text}\n{docstring_text}"
+                else:
+                    # Otherwise just use the base text
+                    node_text = base_text
+                
+                # Add to lists
+                node_ids.append(node["id"])
+                node_texts.append(node_text)
+                
+                # Prepare metadata - include all available node information
+                metadata = {
+                    "id": node["id"],
+                    "name": node["name"],
+                    "type": node["type"]
+                }
+                
+                # Add docstring data if available
+                if "docstring_data" in node:
+                    metadata["docstring_data"] = node["docstring_data"]
+                
+                # Add preprocessed docstring data if available
+                if "preprocessed_docstring_data" in node:
+                    metadata["preprocessed_docstring_data"] = node["preprocessed_docstring_data"]
+                
+                node_metadata.append(metadata)
+            
+            # Store node embeddings if there are any
+            if node_ids:
+                logger.info(f"Storing vector embeddings for {len(node_ids)} nodes")
+                success = db_manager.vector_db.generate_and_store(node_ids, node_texts, node_metadata)
+                if success:
+                    logger.info("Successfully stored node vector embeddings")
+                else:
+                    logger.warning("Failed to store node vector embeddings")
+            
+            # Process edges for vector embeddings
+            edge_ids = []
+            edge_texts = []
+            edge_metadata = []
+            
+            for edge in edges_data:
+                # Create a text representation of the edge
+                edge_text = f"Edge: {edge['source']} -> {edge['target']} (Relation: {edge['relation']})"
+                
+                # Add to lists
+                edge_ids.append(edge["id"])
+                edge_texts.append(edge_text)
+                edge_metadata.append({
+                    "id": edge["id"],
+                    "source": edge["source"],
+                    "target": edge["target"],
+                    "relation": edge["relation"]
+                })
+            
+            # Store edge embeddings if there are any
+            if edge_ids:
+                logger.info(f"Storing vector embeddings for {len(edge_ids)} edges")
+                success = db_manager.vector_db.generate_and_store(edge_ids, edge_texts, edge_metadata)
+                if success:
+                    logger.info("Successfully stored edge vector embeddings")
+                else:
+                    logger.warning("Failed to store edge vector embeddings")
+        
+        # Return success response
+        result = {
             "status": "success",
             "message": f"Graph stored with ID: {graph_id}",
             "graph_id": graph_id,
             "project_name": project_name,
-            "note": "Summaries were skipped to avoid timeouts. Node descriptions are empty."
-        })
+            "nodes_count": len(nodes_data),
+            "edges_count": len(edges_data)
+        }
+        
+        # Add note about skipped summaries if applicable
+        if skip_summaries:
+            result["note"] = "Summaries were skipped to avoid timeouts. Node descriptions may be empty."
+        
+        # Add note about vector embeddings if applicable
+        if store_embeddings and db_manager.vector_db:
+            result["vector_embeddings"] = "Vector embeddings were generated and stored for semantic search capabilities."
+        
+        return json.dumps(result, indent=2)
     except Exception as e:
         logger.error(f"Failed to store graph: {str(e)}")
         return json.dumps({

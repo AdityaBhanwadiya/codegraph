@@ -10,7 +10,6 @@ from search.searchInDocString import get_function_docstring
 from segregate.segregateDocString import parse_docstring
 from db.vector_db_manager import QdrantManager
 from search.text_preprocessor import preprocess_docstring_data, get_combined_text_for_embedding
-from db.logging_utils import get_logger
 
 # Load environment variables
 load_dotenv()
@@ -26,7 +25,6 @@ class DatabaseManager:
     Manages connections and operations for MongoDB and Qdrant vector database.
     """
     def __init__(self):
-        self.logger = get_logger("db_manager")
         self.mongo_client = None
         self.mongo_db = None
         self.mongo_collection = None
@@ -42,18 +40,14 @@ class DatabaseManager:
             self.mongo_client = MongoClient(MONGO_URI)
             self.mongo_db = self.mongo_client[MONGO_DB_NAME]
             self.mongo_collection = self.mongo_db[MONGO_COLLECTION]
-            self.logger.info(f"Connected to MongoDB: {MONGO_DB_NAME}.{MONGO_COLLECTION}")
         except Exception as e:
-            self.logger.error(f"Error connecting to MongoDB: {str(e)}")
             raise
-            
     def _init_vector_db(self):
         """Initialize vector database connection."""
         try:
             self.vector_db = QdrantManager()
-            self.logger.info("Connected to Qdrant vector database")
+            
         except Exception as e:
-            self.logger.error(f"Error connecting to Qdrant: {str(e)}")
             self.vector_db = None
     
     def store_graph(self, graph: nx.DiGraph, project_name: str, directory: str = None) -> str:
@@ -99,7 +93,6 @@ class DatabaseManager:
         
         # Store metadata in MongoDB
         self.mongo_collection.insert_one(metadata)
-        self.logger.info(f"Stored graph metadata in MongoDB with ID: {graph_id}")
         
         # Store embeddings in vector database if available
         if self.vector_db and directory:
@@ -166,12 +159,7 @@ class DatabaseManager:
         
         # Store node embeddings
         if node_ids:
-            self.logger.info(f"Storing embeddings for {len(node_ids)} nodes...")
             success = self.vector_db.generate_and_store(node_ids, node_texts, node_metadata)
-            if success:
-                self.logger.info("Node embeddings stored successfully")
-            else:
-                self.logger.warning("Failed to store node embeddings")
         
         # Process edges
         edge_ids = []
@@ -194,12 +182,8 @@ class DatabaseManager:
         
         # Store edge embeddings
         if edge_ids:
-            self.logger.info(f"Storing embeddings for {len(edge_ids)} edges...")
             success = self.vector_db.generate_and_store(edge_ids, edge_texts, edge_metadata)
-            if success:
-                self.logger.info("Edge embeddings stored successfully")
-            else:
-                self.logger.warning("Failed to store edge embeddings")
+            
     
     async def _process_nodes_async(self, graph: nx.DiGraph, graph_id: str, all_docstrings: Dict) -> List[Dict]:
         """Process nodes asynchronously with batch processing for summaries."""
@@ -235,7 +219,6 @@ class DatabaseManager:
         
         # Process docstrings if any were found
         if node_docstrings:
-            self.logger.info(f"Processing {len(node_docstrings)} docstrings...")
             
             # Update node data with parsed and preprocessed docstrings
             for i, docstring in enumerate(node_docstrings):
