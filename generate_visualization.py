@@ -1,5 +1,5 @@
-from code_parser import CodeGraphBuilder
-from visualize_graph import _draw_interactive_graph
+from parsers.code_parser import CodeGraphBuilder
+from visualize.visualize_graph import _draw_interactive_graph
 import json
 
 # Path to the project

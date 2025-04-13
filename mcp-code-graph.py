@@ -8,11 +8,11 @@ import json
 from dotenv import load_dotenv
 
 # Import your existing code modules
-from code_parser import CodeGraphBuilder
-from visualize_graph import draw_graph, _draw_interactive_graph
-from db_manager import DatabaseManager
-from extractDocStrings import extract_docstrings_from_directory
-from searchInDocString import get_function_docstring
+from parsers.code_parser import CodeGraphBuilder
+from visualize.visualize_graph import draw_graph, _draw_interactive_graph
+from db.db_manager import DatabaseManager
+from scripts.extractDocStrings import extract_docstrings_from_directory
+from search.searchInDocString import get_function_docstring
 
 # Load environment variables
 load_dotenv()
