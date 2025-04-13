@@ -323,6 +323,7 @@
 
 import os
 import uuid
+import asyncio
 from typing import Dict, List, Any, Optional, Tuple
 from dotenv import load_dotenv
 import networkx as nx
@@ -397,7 +398,25 @@ class DatabaseManager:
             "edges": []
         }
         
-        # Process nodes
+        # Process nodes with async batch processing
+        if directory:
+            metadata["nodes"] = asyncio.run(self._process_nodes_async(graph, graph_id, all_docstrings))
+        else:
+            # Fallback to synchronous processing if no directory is provided
+            metadata["nodes"] = self._process_nodes_sync(graph, graph_id)
+        
+        # Process edges
+        metadata["edges"] = self._process_edges(graph, graph_id)
+        
+        # Store metadata in MongoDB
+        self.mongo_collection.insert_one(metadata)
+        print(f"Stored graph metadata in MongoDB with ID: {graph_id}")
+        
+        return graph_id
+    
+    def _process_nodes_sync(self, graph: nx.DiGraph, graph_id: str) -> List[Dict]:
+        """Process nodes synchronously (fallback method)."""
+        nodes_data = []
         for node in graph.nodes:
             # Generate a unique ID for this node
             node_id = f"{graph_id}_{node}"
@@ -406,23 +425,63 @@ class DatabaseManager:
             node_attrs = graph.nodes[node]
             node_type = node_attrs.get("type", "unknown")
             
-            # Get docstring and generate summary
-            description = ""
-            if directory and isinstance(node, str):
-                docstring = get_function_docstring(node, all_docstrings)
-                if docstring and docstring != f"Function '{node}' not found.":
-                    description = self.summary_generator.generate_summary(docstring, 30)
-            
-            # Add to MongoDB metadata
-            metadata["nodes"].append({
+            # Add to nodes data
+            nodes_data.append({
                 "id": node_id,
                 "name": node,
                 "type": node_type,
-                "attributes": node_attrs, 
-                "description": description
+                "attributes": node_attrs,
+                "description": ""
             })
         
-        # Process edges
+        return nodes_data
+    
+    async def _process_nodes_async(self, graph: nx.DiGraph, graph_id: str, all_docstrings: Dict) -> List[Dict]:
+        """Process nodes asynchronously with batch processing for summaries."""
+        # Prepare node data and collect docstrings for batch processing
+        nodes_data = []
+        node_docstrings = []
+        node_indices = []
+        
+        for i, node in enumerate(graph.nodes):
+            # Generate a unique ID for this node
+            node_id = f"{graph_id}_{node}"
+            
+            # Get node attributes
+            node_attrs = graph.nodes[node]
+            node_type = node_attrs.get("type", "unknown")
+            
+            # Add to nodes data
+            nodes_data.append({
+                "id": node_id,
+                "name": node,
+                "type": node_type,
+                "attributes": node_attrs,
+                "description": ""  # Will be filled in later
+            })
+            
+            # Collect docstrings for batch processing
+            if isinstance(node, str):
+                docstring = get_function_docstring(node, all_docstrings)
+                if docstring and docstring != f"Function '{node}' not found.":
+                    node_docstrings.append(docstring)
+                    node_indices.append(i)
+        
+        # Batch process docstrings if any were found
+        if node_docstrings:
+            print(f"Batch processing {len(node_docstrings)} docstrings...")
+            summaries = await self.summary_generator.generate_summaries_batch(node_docstrings, 30)
+            
+            # Update node descriptions with summaries
+            for i, summary in enumerate(summaries):
+                node_index = node_indices[i]
+                nodes_data[node_index]["description"] = summary
+        
+        return nodes_data
+    
+    def _process_edges(self, graph: nx.DiGraph, graph_id: str) -> List[Dict]:
+        """Process edges and return edge data."""
+        edges_data = []
         for u, v, data in graph.edges(data=True):
             # Generate a unique ID for this edge
             edge_id = f"{graph_id}_{u}_{v}"
@@ -430,8 +489,8 @@ class DatabaseManager:
             # Get edge attributes
             relation = data.get("relation", "unknown")
             
-            # Add to MongoDB metadata
-            metadata["edges"].append({
+            # Add to edges data
+            edges_data.append({
                 "id": edge_id,
                 "source": u,
                 "target": v,
@@ -440,11 +499,7 @@ class DatabaseManager:
                 # "description": edgeDescription
             })
         
-        # Store metadata in MongoDB
-        self.mongo_collection.insert_one(metadata)
-        print(f"Stored graph metadata in MongoDB with ID: {graph_id}")
-        
-        return graph_id
+        return edges_data
     
     def get_graph_metadata(self, graph_id: str) -> Optional[Dict]:
         """

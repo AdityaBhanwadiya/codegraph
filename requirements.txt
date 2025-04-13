@@ -8,3 +8,4 @@ pymongo>=4.3.0  # For MongoDB operations
 # sentence-transformers>=2.2.0  # For generating embeddings - commented out
 # pinecone-client>=2.2.0  # For vector database operations - commented out
 python-dotenv>=0.21.0  # For environment variables
+aiohttp>=3.8.0  # For async HTTP requests
