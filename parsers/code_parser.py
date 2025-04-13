@@ -30,7 +30,17 @@ class CodeGraphBuilder:
             'os', 'sys', 're', 'math', 'random', 'datetime', 'time',
             'json', 'csv', 'collections', 'itertools', 'functools',
             'pathlib', 'shutil', 'tempfile', 'urllib', 'http', 'socket',
-            'threading', 'multiprocessing', 'subprocess', 'logging'
+            'threading', 'multiprocessing', 'subprocess', 'logging',
+            'typing', 'abc', 'argparse', 'ast', 'asyncio', 'base64',
+            'calendar', 'concurrent', 'configparser', 'contextlib',
+            'copy', 'dataclasses', 'datetime', 'decimal', 'difflib',
+            'email', 'enum', 'fnmatch', 'fractions', 'ftplib', 'glob',
+            'gzip', 'hashlib', 'heapq', 'hmac', 'html', 'importlib',
+            'inspect', 'io', 'ipaddress', 'json', 'keyword', 'locale',
+            'mimetypes', 'numbers', 'operator', 'os.path', 'pickle',
+            'platform', 'pprint', 'queue', 'random', 'statistics',
+            'string', 'struct', 'textwrap', 'time', 'timeit', 'traceback',
+            'types', 'typing', 'uuid', 'warnings', 'weakref', 'xml', 'zipfile'
         ])
 
     def parse_project(self):
@@ -57,8 +67,24 @@ class CodeGraphBuilder:
                 self.graph.add_node(node.name, type="function")
                 self.graph.add_edge(file_node, node.name, relation="contains")
 
+            elif isinstance(node, ast.Import):
+                for name in node.names:
+                    module_name = name.name.split('.')[0]  # Get the top-level module name
+                    
+                    # Check if the module is a standard library module
+                    if self.exclude_stdlib and self._is_stdlib_module(module_name):
+                        continue
+                    
+                    imported_file = module_name + ".py"
+                    self.graph.add_node(imported_file, type="file")
+                    self.graph.add_edge(file_node, imported_file, relation="imports")
+
             elif isinstance(node, ast.ImportFrom):
                 if node.module:
+                    # Check if the module is a standard library module
+                    if self.exclude_stdlib and self._is_stdlib_module(node.module):
+                        continue
+                    
                     imported_file = node.module + ".py"
                     self.graph.add_node(imported_file, type="file")
                     self.graph.add_edge(file_node, imported_file, relation="imports")
