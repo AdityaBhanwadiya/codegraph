@@ -46,15 +46,6 @@ def parse_args():
                         help='Project name for database storage')
     db_group.add_argument('--list-graphs', action='store_true',
                         help='List all stored graphs')
-    # Vector database search options commented out
-    # db_group.add_argument('--search-nodes', default=None,
-    #                     help='Search for similar nodes')
-    # db_group.add_argument('--search-edges', default=None,
-    #                     help='Search for similar edges')
-    # db_group.add_argument('--graph-id', default=None,
-    #                     help='Graph ID for search operations')
-    # db_group.add_argument('--top-k', type=int, default=5,
-    #                     help='Number of search results to return')
     db_group.add_argument('--delete-graph', default=None,
                         help='Delete a graph by ID')
     
@@ -93,47 +84,7 @@ def main():
             
             db_manager.close()
             return
-        
-        # Vector database search functionality commented out
-        # if args.search_nodes:
-        #     results = db_manager.search_similar_nodes(
-        #         args.search_nodes, 
-        #         top_k=args.top_k, 
-        #         graph_id=args.graph_id
-        #     )
-        #     
-        #     if results:
-        #         print(f"\nSearch results for nodes similar to '{args.search_nodes}':")
-        #         for i, result in enumerate(results):
-        #             print(f"{i+1}. {result['metadata']['name']} (Type: {result['metadata']['type']})")
-        #             print(f"   Score: {result['score']:.4f}")
-        #             print(f"   Graph ID: {result['metadata']['graph_id']}")
-        #             print()
-        #     else:
-        #         print("No similar nodes found.")
-        #     
-        #     db_manager.close()
-        #     return
-        # 
-        # if args.search_edges:
-        #     results = db_manager.search_similar_edges(
-        #         args.search_edges, 
-        #         top_k=args.top_k, 
-        #         graph_id=args.graph_id
-        #     )
-        #     
-        #     if results:
-        #         print(f"\nSearch results for edges similar to '{args.search_edges}':")
-        #         for i, result in enumerate(results):
-        #             print(f"{i+1}. {result['metadata']['source']} -> {result['metadata']['target']} (Relation: {result['metadata']['relation']})")
-        #             print(f"   Score: {result['score']:.4f}")
-        #             print(f"   Graph ID: {result['metadata']['graph_id']}")
-        #             print()
-        #     else:
-        #         print("No similar edges found.")
-        #     
-        #     db_manager.close()
-        #     return
+    
     
     # Regular graph generation
     print(f"Parsing directory: {args.directory}")
@@ -164,7 +115,7 @@ def main():
     if args.store_db:
         project_name = args.project_name or os.path.basename(os.path.abspath(args.directory))
         db_manager = DatabaseManager()
-        graph_id = db_manager.store_graph(graph, project_name)
+        graph_id = db_manager.store_graph(graph, project_name, args.directory)
         print(f"Graph stored in MongoDB with ID: {graph_id}")
         db_manager.close()
     
