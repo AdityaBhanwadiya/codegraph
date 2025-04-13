@@ -370,27 +370,6 @@ async def store_code_graph(directory_path: str, project_name: str = None, skip_s
         })
     
 @mcp.tool()
-def list_stored_graphs() -> str:
-    """
-    List all code knowledge graphs stored in the database.
-    
-    Returns:
-        JSON string containing information about stored graphs
-    """
-    try:
-        graphs = db_manager.list_graphs()
-        return json.dumps({
-            "status": "success",
-            "count": len(graphs),
-            "graphs": graphs
-        })
-    except Exception as e:
-        return json.dumps({
-            "status": "error",
-            "message": f"Failed to list graphs: {str(e)}"
-        })
-
-@mcp.tool()
 def delete_graph(graph_id: str) -> str:
     """
     Delete a code knowledge graph from the database.
@@ -417,6 +396,103 @@ def delete_graph(graph_id: str) -> str:
         return json.dumps({
             "status": "error",
             "message": f"Error deleting graph: {str(e)}"
+        })
+
+@mcp.tool()
+def search_vector_db(query_text: str, top_k: int = 5, project_name: str = None) -> str:
+    """
+    Search for nodes and edges in the vector database using semantic similarity.
+    
+    Args:
+        query_text: The text query to search for. Can be a question, description, or keywords.
+        top_k: Number of results to return (default: 5)
+        project_name: Optional project name to filter results by
+        
+    Returns:
+        JSON string containing search results with similarity scores
+    """
+    try:
+        # Validate input
+        if not query_text or not query_text.strip():
+            return json.dumps({
+                "status": "error",
+                "message": "Query text cannot be empty."
+            })
+        
+        # Use the existing search_by_text method from DatabaseManager
+        results = db_manager.search_by_text(query_text, top_k)
+        
+        # If no results found
+        if not results:
+            return json.dumps({
+                "status": "success", 
+                "message": "No matching results found.",
+                "results": []
+            })
+        
+        # Process and format the results
+        formatted_results = []
+        for result in results:
+            metadata = result.get("metadata", {})
+            result_type = "node" if "type" in metadata else "edge"
+            
+            # Filter by project_name if specified
+            if project_name and "id" in result:
+                # Extract graph_id from the result ID (format: graph_id_node_name)
+                parts = result["id"].split("_", 1)
+                if len(parts) > 1:
+                    graph_id = parts[0]
+                    # Get graph metadata
+                    graph_metadata = db_manager.get_graph_metadata(graph_id)
+                    if graph_metadata and graph_metadata.get("project_name") != project_name:
+                        continue
+            
+            # Format node result
+            if result_type == "node":
+                formatted_result = {
+                    "type": result_type,
+                    "name": metadata.get("name", ""),
+                    "node_type": metadata.get("type", ""),
+                    "similarity_score": result.get("score", 0),
+                    "id": result.get("id", "")
+                }
+                
+                # Add docstring information if available
+                if "docstring_data" in metadata:
+                    docstring = metadata["docstring_data"]
+                    formatted_result["summary"] = docstring.get("summary", "")
+                    
+                    # Include parameters if they exist
+                    if docstring.get("parameters"):
+                        formatted_result["parameters"] = docstring.get("parameters", {})
+                    
+                    # Include return info if it exists
+                    if docstring.get("returns"):
+                        formatted_result["returns"] = docstring.get("returns", "")
+            
+            # Format edge result
+            else:
+                formatted_result = {
+                    "type": result_type,
+                    "source": metadata.get("source", ""),
+                    "target": metadata.get("target", ""),
+                    "relation": metadata.get("relation", ""),
+                    "similarity_score": result.get("score", 0),
+                    "id": result.get("id", "")
+                }
+            
+            formatted_results.append(formatted_result)
+        
+        return json.dumps({
+            "status": "success",
+            "message": f"Found {len(formatted_results)} results",
+            "results": formatted_results
+        }, indent=2)
+    
+    except Exception as e:
+        return json.dumps({
+            "status": "error",
+            "message": f"Error searching vector database: {str(e)}"
         })
 
 @mcp.resource("graph://{directory}")
