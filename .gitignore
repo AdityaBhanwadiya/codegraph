@@ -1,8 +1,20 @@
+<<<<<<< HEAD
 # Byte-compiled / optimized / DLL files
+=======
+# Python virtual environments
+.venv/
+venv/
+ENV/
+env/
+.python-version
+
+# Python bytecode
+>>>>>>> 9f31406 (mcp-code-graph mcp based graph generator)
 __pycache__/
 *.py[cod]
 *$py.class
 
+<<<<<<< HEAD
 # C extensions
 *.so
 
@@ -71,3 +83,29 @@ Thumbs.db
 # Logs and temporary files
 *.log
 *.swp
+=======
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.*
+
+# Logs
+*.log
+
+# OS specific files
+.DS_Store
+Thumbs.db
+>>>>>>> 9f31406 (mcp-code-graph mcp based graph generator)
