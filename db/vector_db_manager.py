@@ -5,6 +5,7 @@ import hashlib
 from typing import Dict, List, Any, Optional, Tuple, Union
 import numpy as np
 from dotenv import load_dotenv
+from db.logging_utils import get_logger
 
 # Load environment variables
 load_dotenv()
@@ -148,6 +149,8 @@ class QdrantManager(VectorDBManager):
         Args:
             embedding_generator: An instance of EmbeddingGenerator
         """
+        self.logger = get_logger("qdrant_manager")
+        
         try:
             from qdrant_client import QdrantClient
             from qdrant_client.http import models
@@ -175,11 +178,11 @@ class QdrantManager(VectorDBManager):
         if self.qdrant_api_key:
             # Using Qdrant Cloud with API key
             self.client = QdrantClient(url=self.qdrant_url, api_key=self.qdrant_api_key)
-            print(f"Connected to Qdrant Cloud at {self.qdrant_url}")
+            self.logger.info(f"Connected to Qdrant Cloud at {self.qdrant_url}")
         else:
             # Using local Qdrant instance
             self.client = QdrantClient(url=self.qdrant_url)
-            print(f"Connected to local Qdrant instance at {self.qdrant_url}")
+            self.logger.info(f"Connected to local Qdrant instance at {self.qdrant_url}")
         
         # Create the collection if it doesn't exist
         self._create_collection_if_not_exists()
@@ -191,7 +194,7 @@ class QdrantManager(VectorDBManager):
         try:
             # Check if the collection exists
             self.client.get_collection(self.qdrant_collection)
-            print(f"Using existing Qdrant collection: {self.qdrant_collection}")
+            self.logger.info(f"Using existing Qdrant collection: {self.qdrant_collection}")
         except (UnexpectedResponse, ValueError):
             # Create the collection if it doesn't exist
             self.client.create_collection(
@@ -201,7 +204,7 @@ class QdrantManager(VectorDBManager):
                     distance=self.models.Distance.COSINE
                 )
             )
-            print(f"Created new Qdrant collection: {self.qdrant_collection}")
+            self.logger.info(f"Created new Qdrant collection: {self.qdrant_collection}")
     
     def _generate_deterministic_id(self, metadata: Dict[str, Any]) -> int:
         """
@@ -270,7 +273,7 @@ class QdrantManager(VectorDBManager):
             
             return True
         except Exception as e:
-            print(f"Error storing vectors in Qdrant: {str(e)}")
+            self.logger.error(f"Error storing vectors in Qdrant: {str(e)}")
             return False
     
     def search_vectors(self, query_vector: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
@@ -312,7 +315,7 @@ class QdrantManager(VectorDBManager):
             
             return results
         except Exception as e:
-            print(f"Error searching vectors in Qdrant: {str(e)}")
+            self.logger.error(f"Error searching vectors in Qdrant: {str(e)}")
             return []
     
     def delete_collection(self) -> bool:
@@ -326,7 +329,7 @@ class QdrantManager(VectorDBManager):
             self.client.delete_collection(collection_name=self.qdrant_collection)
             return True
         except Exception as e:
-            print(f"Error deleting Qdrant collection: {str(e)}")
+            self.logger.error(f"Error deleting Qdrant collection: {str(e)}")
             return False
     
     def close(self) -> None:

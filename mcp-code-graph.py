@@ -13,6 +13,10 @@ from visualize.visualize_graph import draw_graph, _draw_interactive_graph
 from db.db_manager import DatabaseManager
 from scripts.extractDocStrings import extract_docstrings_from_directory
 from search.searchInDocString import get_function_docstring
+from db.logging_utils import get_logger
+
+# Set up logger
+logger = get_logger("mcp_server")
 
 # Load environment variables
 load_dotenv()
@@ -46,6 +50,8 @@ def parse_code_directory(directory_path: str, include_builtins: bool = False, in
     if not os.path.isdir(directory_path):
         return f"Error: '{directory_path}' is not a valid directory."
     
+    logger.info(f"Parsing code directory: {directory_path}")
+    
     # Create the graph builder with options
     builder = CodeGraphBuilder(
         directory_path,
@@ -55,6 +61,7 @@ def parse_code_directory(directory_path: str, include_builtins: bool = False, in
     
     # Parse the project
     graph = builder.parse_project()
+    logger.info(f"Parsed project, found {len(graph.nodes)} nodes and {len(graph.edges)} edges")
     
     # Return basic graph info
     return json.dumps({
@@ -102,6 +109,8 @@ async def visualize_code_graph_and_save(
         ctx.info(f"Analyzing code in {directory_path}")
         await ctx.report_progress(0, 100)
     
+    logger.info(f"Visualizing code in {directory_path}")
+    
     # Create the graph builder with options
     builder = CodeGraphBuilder(
         directory_path,
@@ -115,11 +124,14 @@ async def visualize_code_graph_and_save(
         await ctx.report_progress(25, 100)
     
     graph = builder.parse_project()
+    logger.info(f"Parsed project, building visualization with {len(graph.nodes)} nodes")
     
     # Filter the graph if needed
     if filter_relations:
         valid_relations = ["contains", "imports", "calls"]
         filter_relations = [r for r in filter_relations if r in valid_relations]
+        
+        logger.info(f"Filtering graph by relations: {filter_relations}")
         
         # Create a filtered copy of the graph
         filtered_graph = nx.DiGraph()
@@ -133,7 +145,10 @@ async def visualize_code_graph_and_save(
         graph = filtered_graph
     
     # Remove isolated nodes (no connections)
-    graph.remove_nodes_from(list(nx.isolates(graph)))
+    isolated_nodes = list(nx.isolates(graph))
+    if isolated_nodes:
+        logger.info(f"Removing {len(isolated_nodes)} isolated nodes")
+        graph.remove_nodes_from(isolated_nodes)
     
     if ctx:
         ctx.info("Creating visualization")
@@ -245,6 +260,7 @@ async def visualize_code_graph_and_save(
     
     try:
         # Write the HTML content to the file directly
+        logger.info(f"Saving visualization to {output_path}")
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(html_string)
         
@@ -261,6 +277,7 @@ async def visualize_code_graph_and_save(
             "function_count": sum(1 for n, attr in graph.nodes(data=True) if attr.get("type") == "function")
         })
     except Exception as e:
+        logger.error(f"Error saving visualization: {str(e)}")
         if ctx:
             ctx.info(f"Error saving visualization: {str(e)}")
         
@@ -290,6 +307,8 @@ async def store_code_graph(directory_path: str, project_name: str = None, skip_s
     if not project_name:
         project_name = os.path.basename(os.path.abspath(directory_path))
     
+    logger.info(f"Storing code graph for project: {project_name}")
+    
     # Create the graph builder
     builder = CodeGraphBuilder(directory_path)
     
@@ -300,6 +319,7 @@ async def store_code_graph(directory_path: str, project_name: str = None, skip_s
         # Generate a unique ID for this graph
         import uuid
         graph_id = str(uuid.uuid4())
+        logger.info(f"Generated graph ID: {graph_id}")
         
         # Store metadata in MongoDB
         metadata = {
@@ -332,6 +352,7 @@ async def store_code_graph(directory_path: str, project_name: str = None, skip_s
             })
         
         metadata["nodes"] = nodes_data
+        logger.info(f"Processed {len(nodes_data)} nodes")
         
         # Process edges
         edges_data = []
@@ -352,6 +373,7 @@ async def store_code_graph(directory_path: str, project_name: str = None, skip_s
             })
         
         metadata["edges"] = edges_data
+        logger.info(f"Processed {len(edges_data)} edges")
         
         # Store metadata in MongoDB
         db_manager.mongo_collection.insert_one(metadata)
@@ -364,6 +386,7 @@ async def store_code_graph(directory_path: str, project_name: str = None, skip_s
             "note": "Summaries were skipped to avoid timeouts. Node descriptions are empty."
         })
     except Exception as e:
+        logger.error(f"Failed to store graph: {str(e)}")
         return json.dumps({
             "status": "error",
             "message": f"Failed to store graph: {str(e)}"
@@ -381,25 +404,29 @@ def delete_graph(graph_id: str) -> str:
         Success or error message
     """
     try:
+        logger.info(f"Deleting graph with ID: {graph_id}")
         success = db_manager.delete_graph(graph_id)
         if success:
+            logger.info(f"Graph {graph_id} deleted successfully")
             return json.dumps({
                 "status": "success",
                 "message": f"Graph {graph_id} deleted successfully."
             })
         else:
+            logger.warning(f"Failed to delete graph {graph_id}")
             return json.dumps({
                 "status": "error",
                 "message": f"Failed to delete graph {graph_id}."
             })
     except Exception as e:
+        logger.error(f"Error deleting graph: {str(e)}")
         return json.dumps({
             "status": "error",
             "message": f"Error deleting graph: {str(e)}"
         })
 
 @mcp.tool()
-def search_vector_db(query_text: str, top_k: int = 5, project_name: str = None) -> str:
+def search_vector_db(query_text: str, top_k: int = 5, project_name: str = None, debug: bool = False) -> str:
     """
     Search for nodes and edges in the vector database using semantic similarity.
     
@@ -407,6 +434,7 @@ def search_vector_db(query_text: str, top_k: int = 5, project_name: str = None) 
         query_text: The text query to search for. Can be a question, description, or keywords.
         top_k: Number of results to return (default: 5)
         project_name: Optional project name to filter results by
+        debug: If True, includes debugging information in the response
         
     Returns:
         JSON string containing search results with similarity scores
@@ -419,19 +447,45 @@ def search_vector_db(query_text: str, top_k: int = 5, project_name: str = None) 
                 "message": "Query text cannot be empty."
             })
         
+        logger.info(f"Searching vector DB for: '{query_text}'")
+        
+        # Debug information
+        debug_info = {
+            "raw_query": query_text,
+            "filtered_out_count": 0,
+            "total_raw_results": 0,
+            "project_name_filter": project_name
+        }
+        
         # Use the existing search_by_text method from DatabaseManager
-        results = db_manager.search_by_text(query_text, top_k)
+        from search.text_preprocessor import preprocess_text
+        preprocessed_query = preprocess_text(query_text)
+        if debug:
+            debug_info["preprocessed_query"] = preprocessed_query
+            
+        results = db_manager.search_by_text(query_text, top_k * 2)  # Request more results to compensate for filtering
         
         # If no results found
         if not results:
+            logger.info("No matching results found")
             return json.dumps({
                 "status": "success", 
                 "message": "No matching results found.",
-                "results": []
+                "results": [],
+                "debug_info": debug_info if debug else None
             })
+            
+        debug_info["total_raw_results"] = len(results)
+        if debug:
+            debug_info["raw_results"] = [{
+                "id": r.get("id", "unknown"),
+                "score": r.get("score", 0),
+                "metadata_keys": list(r.get("metadata", {}).keys())
+            } for r in results]
         
         # Process and format the results
         formatted_results = []
+        filtered_out = 0
         for result in results:
             metadata = result.get("metadata", {})
             result_type = "node" if "type" in metadata else "edge"
@@ -445,7 +499,23 @@ def search_vector_db(query_text: str, top_k: int = 5, project_name: str = None) 
                     # Get graph metadata
                     graph_metadata = db_manager.get_graph_metadata(graph_id)
                     if graph_metadata and graph_metadata.get("project_name") != project_name:
+                        filtered_out += 1
+                        if debug:
+                            if "filtered_items" not in debug_info:
+                                debug_info["filtered_items"] = []
+                            debug_info["filtered_items"].append({
+                                "id": result.get("id", "unknown"),
+                                "graph_id": graph_id,
+                                "project_name": graph_metadata.get("project_name") if graph_metadata else "unknown"
+                            })
                         continue
+        
+        debug_info["filtered_out_count"] = filtered_out
+        
+        # Process and format the results
+        for result in results:
+            metadata = result.get("metadata", {})
+            result_type = "node" if "type" in metadata else "edge"
             
             # Format node result
             if result_type == "node":
@@ -483,105 +553,22 @@ def search_vector_db(query_text: str, top_k: int = 5, project_name: str = None) 
             
             formatted_results.append(formatted_result)
         
+        logger.info(f"Found {len(formatted_results)} results")
+        
         return json.dumps({
             "status": "success",
             "message": f"Found {len(formatted_results)} results",
-            "results": formatted_results
+            "results": formatted_results,
+            "debug_info": debug_info if debug else None
         }, indent=2)
     
     except Exception as e:
+        logger.error(f"Error searching vector database: {str(e)}")
         return json.dumps({
             "status": "error",
             "message": f"Error searching vector database: {str(e)}"
         })
-
-@mcp.resource("graph://{directory}")
-def get_graph_summary(directory: str) -> str:
-    """
-    Get a summary of the code graph for a directory.
-    
-    Args:
-        directory: Path to the directory containing Python code
-        
-    Returns:
-        A textual summary of the code graph
-    """
-    # Validate directory path
-    if not os.path.isdir(directory):
-        return f"Error: '{directory}' is not a valid directory."
-    
-    # Create the graph builder
-    builder = CodeGraphBuilder(directory)
-    
-    # Parse the project
-    graph = builder.parse_project()
-    
-    # Calculate stats
-    file_nodes = sum(1 for n, attr in graph.nodes(data=True) if attr.get("type") == "file")
-    function_nodes = sum(1 for n, attr in graph.nodes(data=True) if attr.get("type") == "function")
-    contains_edges = sum(1 for _, _, attr in graph.edges(data=True) if attr.get("relation") == "contains")
-    imports_edges = sum(1 for _, _, attr in graph.edges(data=True) if attr.get("relation") == "imports")
-    calls_edges = sum(1 for _, _, attr in graph.edges(data=True) if attr.get("relation") == "calls")
-    
-    # Extract docstrings for top-level functions
-    all_docstrings = extract_docstrings_from_directory(directory)
-    
-    # Find important nodes (files with most functions and functions with most calls)
-    file_importance = {}
-    for u, v, attr in graph.edges(data=True):
-        if attr.get("relation") == "contains":
-            file_importance[u] = file_importance.get(u, 0) + 1
-    
-    function_importance = {}
-    for u, v, attr in graph.edges(data=True):
-        if attr.get("relation") == "calls":
-            function_importance[u] = function_importance.get(u, 0) + 1
-    
-    # Get top files and functions
-    top_files = sorted(file_importance.items(), key=lambda x: x[1], reverse=True)[:5]
-    top_functions = sorted(function_importance.items(), key=lambda x: x[1], reverse=True)[:5]
-    
-    # Build summary
-    summary = f"Code Knowledge Graph Summary for {directory}\n\n"
-    summary += f"Total nodes: {len(graph.nodes)} ({file_nodes} files, {function_nodes} functions)\n"
-    summary += f"Total edges: {len(graph.edges)} ({contains_edges} contains, {imports_edges} imports, {calls_edges} calls)\n\n"
-    
-    summary += "Top Files (by number of functions):\n"
-    for file, count in top_files:
-        summary += f"- {file}: {count} functions\n"
-    
-    summary += "\nTop Functions (by number of outgoing calls):\n"
-    for func, count in top_functions:
-        docstring = get_function_docstring(func, all_docstrings)
-        if docstring and not docstring.startswith("Function"):
-            # Only show first line of docstring
-            docstring_first_line = docstring.split("\n")[0].strip()
-            summary += f"- {func}: {count} calls - {docstring_first_line}\n"
-        else:
-            summary += f"- {func}: {count} calls\n"
-    
-    return summary
-
-@mcp.prompt()
-def analyze_code_structure(directory: str) -> str:
-    """
-    Create a prompt for analyzing code structure in a directory.
-    
-    Args:
-        directory: Path to the directory containing Python code
-    """
-    return f"""
-I'd like you to analyze the code structure in the directory: {directory}
-
-Please help me understand:
-1. The high-level architecture of the codebase
-2. Key functions and their relationships
-3. File dependencies and import patterns
-4. Any potential code organization issues or improvements
-
-Use the code knowledge graph tools to visualize and explore the codebase.
-"""
-
 # Initialize the MCP server
 if __name__ == "__main__":
+    logger.info("Starting CodeGraphVisualizer MCP server")
     mcp.run()

@@ -5,7 +5,12 @@ This script demonstrates how to use the DatabaseManager class to store and retri
 """
 
 import os
+import sys
 import networkx as nx
+
+# Add the parent directory to the Python path so modules can be imported
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from db.db_manager import DatabaseManager
 from db.vector_db_manager import QdrantManager
 
