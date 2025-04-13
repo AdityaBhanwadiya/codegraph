@@ -161,9 +161,9 @@ class QdrantManager(VectorDBManager):
         self.models = models
         
         # Get Qdrant configuration from environment variables
-        self.qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+        self.qdrant_url = os.getenv("QDRANT_URL")
         self.qdrant_api_key = os.getenv("QDRANT_API_KEY")
-        self.qdrant_collection = os.getenv("QDRANT_COLLECTION", "code-graph-embeddings")
+        self.qdrant_collection = os.getenv("QDRANT_COLLECTION")
         
         # Initialize the embedding generator
         self.embedding_generator = embedding_generator or SentenceTransformerEmbedding()
@@ -289,7 +289,8 @@ class QdrantManager(VectorDBManager):
             search_result = self.client.search(
                 collection_name=self.qdrant_collection,
                 query_vector=query_vector,
-                limit=top_k
+                limit=top_k,
+                with_payload=True
             )
             
             # Format the results
@@ -356,13 +357,15 @@ class QdrantManager(VectorDBManager):
         Search for similar vectors by text query.
         
         Args:
-            query_text: The text query to search for
+            query_text: The text query to search for (already preprocessed)
             top_k: Number of results to return
             
         Returns:
             List of dictionaries containing the search results
         """
-        # Generate embedding for the query text
+        # Note: The query_text is expected to be already preprocessed by the DatabaseManager
+        
+        # Generate embedding for the preprocessed query text
         query_vector = self.embedding_generator.generate_embedding(query_text)
         
         # Search for similar vectors

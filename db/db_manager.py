@@ -9,6 +9,7 @@ from scripts.extractDocStrings import extract_docstrings_from_directory
 from search.searchInDocString import get_function_docstring
 from segregate.segregateDocString import parse_docstring
 from db.vector_db_manager import QdrantManager
+from search.text_preprocessor import preprocess_docstring_data, get_combined_text_for_embedding
 
 # Load environment variables
 load_dotenv()
@@ -142,30 +143,12 @@ class DatabaseManager:
         node_metadata = []
         
         for node in nodes:
-            if "docstring_data" in node:
-                # Create a text representation of the node
-                node_text = f"Node: {node['name']} (Type: {node['type']})\n"
+            if "preprocessed_docstring_data" in node:
+                # Use the preprocessed docstring data for better similarity matching
+                preprocessed_data = node["preprocessed_docstring_data"]
                 
-                # Add docstring data
-                docstring_data = node["docstring_data"]
-                node_text += f"Summary: {docstring_data['summary']}\n"
-                
-                if docstring_data['parameters']:
-                    node_text += "Parameters:\n"
-                    for param_name, param_desc in docstring_data['parameters'].items():
-                        node_text += f"  - {param_name}: {param_desc}\n"
-                
-                if docstring_data['returns']:
-                    node_text += f"Returns: {docstring_data['returns']}\n"
-                
-                if docstring_data['raises']:
-                    node_text += f"Raises: {docstring_data['raises']}\n"
-                
-                if docstring_data['note']:
-                    node_text += f"Note: {docstring_data['note']}\n"
-                
-                if docstring_data['example']:
-                    node_text += f"Example: {docstring_data['example']}\n"
+                # Get combined text for embedding
+                node_text = get_combined_text_for_embedding(preprocessed_data)
                 
                 # Add to lists
                 node_ids.append(node["id"])
@@ -174,7 +157,8 @@ class DatabaseManager:
                     "id": node["id"],
                     "name": node["name"],
                     "type": node["type"],
-                    "docstring_data": docstring_data
+                    "docstring_data": node["docstring_data"],
+                    "preprocessed_docstring_data": preprocessed_data
                 })
         
         # Store node embeddings
@@ -250,13 +234,22 @@ class DatabaseManager:
         if node_docstrings:
             print(f"Processing {len(node_docstrings)} docstrings...")
             
-            # Update node data with parsed docstrings
+            # Update node data with parsed and preprocessed docstrings
             for i, docstring in enumerate(node_docstrings):
                 node_index = node_indices[i]
+                
+                # Parse the docstring
                 parsed_docstring = parse_docstring(docstring)
+                
+                # Preprocess the parsed docstring
+                preprocessed_docstring = preprocess_docstring_data(parsed_docstring)
+                
+                # Store both the original and preprocessed versions
                 nodes_data[node_index]["docstring_data"] = parsed_docstring
+                nodes_data[node_index]["preprocessed_docstring_data"] = preprocessed_docstring
+                
                 # Use the summary from parsed docstring as the description
-                nodes_data[node_index]["description"] = parsed_docstring['summary']
+                nodes_data[node_index]["description"] = preprocessed_docstring['summary']
         
         return nodes_data
     
@@ -352,7 +345,11 @@ class DatabaseManager:
         if not self.vector_db:
             return []
         
-        return self.vector_db.search_by_text(query_text, top_k)
+        # Preprocess the query text using the same preprocessing as the docstrings
+        from search.text_preprocessor import preprocess_text
+        preprocessed_query = preprocess_text(query_text)
+        
+        return self.vector_db.search_by_text(preprocessed_query, top_k)
     
     def close(self):
         """Close database connections."""

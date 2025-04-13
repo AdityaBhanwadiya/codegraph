@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from parsers.code_parser import CodeGraphBuilder
 from visualize.visualize_graph import draw_graph
 from db.db_manager import DatabaseManager
+from search.searchExplainer import SearchExplainer
 
 def add_parent_links(tree):
     """Add parent links to AST nodes for function call resolution."""
@@ -56,6 +57,8 @@ def parse_args():
                         help='Search for nodes and edges by text query')
     db_group.add_argument('--top-k', type=int, default=5,
                         help='Number of search results to return (default: 5)')
+    db_group.add_argument('--explain', action='store_true',
+                        help='Generate a human-friendly explanation of search results using Azure OpenAI')
     
     return parser.parse_args()
 
@@ -72,7 +75,7 @@ def main():
             if graphs:
                 print("\nStored Graphs:")
                 for graph in graphs:
-                    print(f"ID: {graph['graph_id']}")
+                    print(f"  ID: {graph['graph_id']}")
                     print(f"  Project: {graph['project_name']}")
                     print(f"  Nodes: {graph['node_count']}, Edges: {graph['edge_count']}")
                     print(f"  Created: {graph['timestamp']}")
@@ -99,27 +102,45 @@ def main():
             
             if results:
                 print(f"\nFound {len(results)} results:")
-                for i, result in enumerate(results):
-                    print(f"\n{i+1}. Score: {result['score']:.4f}")
-                    
-                    # Check if this is a node or edge result
-                    metadata = result['metadata']
-                    if 'type' in metadata:  # Node
-                        print(f"Node: {metadata['name']} (Type: {metadata['type']})")
+                
+                # If explain flag is set, use SearchExplainer to generate a human-friendly explanation
+                if args.explain:
+                    print("\nGenerating human-friendly explanation...")
+                    explainer = SearchExplainer()
+                    explanation = explainer.explain_search_results(args.search, results)
+                    print("\n" + explanation)
+                else:
+                    # Display raw search results
+                    for i, result in enumerate(results):
+                        print(f"\n{i+1}. Score: {result['score']:.4f}")
                         
-                        if 'docstring_data' in metadata:
-                            docstring = metadata['docstring_data']
-                            print(f"Summary: {docstring['summary']}")
+                        # Check if this is a node or edge result
+                        metadata = result['metadata']
+                        if 'type' in metadata:  # Node
+                            print(f"Node: {metadata['name']} (Type: {metadata['type']})")
                             
-                            if docstring['parameters']:
-                                print("Parameters:")
-                                for param_name, param_desc in docstring['parameters'].items():
-                                    print(f"  - {param_name}: {param_desc}")
-                            
-                            if docstring['returns']:
-                                print(f"Returns: {docstring['returns']}")
-                    else:  # Edge
-                        print(f"Edge: {metadata['source']} -> {metadata['target']} (Relation: {metadata['relation']})")
+                            if 'docstring_data' in metadata:
+                                docstring = metadata['docstring_data']
+                                print(f"Summary: {docstring['summary']}")
+                                
+                                if docstring['parameters']:
+                                    print("Parameters:")
+                                    for param_name, param_desc in docstring['parameters'].items():
+                                        print(f"  - {param_name}: {param_desc}")
+                                
+                                if docstring['returns']:
+                                    print(f"Returns: {docstring['returns']}")
+
+                                if docstring['raises']:
+                                    print(f"Raises: {docstring['raises']}")
+
+                                if docstring['example']:
+                                    print(f"Example: {docstring['example']}")
+                                
+                                if docstring['note']:
+                                    print(f"Note: {docstring['note']}")
+                        else:  # Edge
+                            print(f"Edge: {metadata['source']} -> {metadata['target']} (Relation: {metadata['relation']})")
             else:
                 print("No results found")
             

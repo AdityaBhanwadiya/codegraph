@@ -27,7 +27,7 @@ class SummaryGenerator:
         self.semaphore = asyncio.Semaphore(self.max_concurrent_requests)
         self.lock = asyncio.Lock()  # For thread-safe rate limiting
     
-    def generate_summary(self, code: str, max_words: int = 30) -> str:
+    def generate_summary(self, code: str, max_words: int = 100) -> str:
         """
         Generate a concise summary of code using Azure OpenAI.
         
