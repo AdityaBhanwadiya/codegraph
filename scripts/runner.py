@@ -3,9 +3,13 @@ import ast
 import os
 import sys
 import argparse
-from code_parser import CodeGraphBuilder
-from visualize_graph import draw_graph
-from db_manager import DatabaseManager
+
+# Add the project root directory to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from parsers.code_parser import CodeGraphBuilder
+from visualize.visualize_graph import draw_graph
+from db.db_manager import DatabaseManager
 
 def add_parent_links(tree):
     """Add parent links to AST nodes for function call resolution."""

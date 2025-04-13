@@ -3,7 +3,6 @@ import time
 import random
 import asyncio
 import aiohttp
-import requests
 from typing import Dict, List, Any, Optional
 from dotenv import load_dotenv
 
@@ -77,15 +76,26 @@ class SummaryGenerator:
         # Prepare API request components
         api_url = f"{AZURE_OPENAI_ENDPOINT}/openai/deployments/{AZURE_OPENAI_DEPLOYMENT}/chat/completions?api-version={AZURE_OPENAI_API_VERSION}"
         
+        system_prompt = (
+            f"You are a code documentation assistant. Read the following function docstring "
+            f"and generate a clear, concise, yet detailed summary. Your summary should explain:\n"
+            f"- What the function does.\n"
+            f"- The purpose of each parameter.\n"
+            f"- What is returned by the function.\n"
+            f"- Any exceptions that might be raised.\n"
+            f"- A brief explanation of the provided usage example.\n"
+            f"Just make sure your response is under {max_words} words."
+        )
+        
         payload = {
             "messages": [
                 {
                     "role": "system",
-                    "content": f"You are a code documentation assistant. Your task is to summarize Python functions into concise, informative summaries of {max_words} words or less. Focus on capturing the core functionality and purpose."
+                    "content": system_prompt
                 },
                 {
                     "role": "user",
-                    "content": f"Summarize this Python function in {max_words} words or less:\n\n{code}"
+                    "content": f"Summarize this DocString in {max_words} words:\n\n{code}"
                 }
             ],
             "temperature": 0.3,
