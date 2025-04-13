@@ -6,7 +6,7 @@ Utility functions for the application.
 This module provides various utility functions for email validation,
 user creation, price formatting, and tax calculation.
 
-Author: Development Team
+Author: AI M.F.
 Copyright (c) 2025 Example Corp.
 License: MIT
 """

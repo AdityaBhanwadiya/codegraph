@@ -7,7 +7,7 @@ This module serves as the entry point for the application. It initializes
 the application, runs a demonstration of its features, and provides a
 clean shutdown.
 
-Author: Development Team
+Author: AI M.F.
 Copyright (c) 2025 Example Corp.
 License: MIT
 """

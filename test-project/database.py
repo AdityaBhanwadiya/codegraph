@@ -7,7 +7,7 @@ This module provides functions for storing, retrieving, and managing
 data in a simulated in-memory database. It also includes functions for
 importing and exporting the database to JSON files.
 
-Author: Development Team
+Author: AI M.F.
 Copyright (c) 2025 Example Corp.
 License: MIT
 """

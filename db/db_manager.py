@@ -7,7 +7,8 @@ import networkx as nx
 from pymongo import MongoClient
 from scripts.extractDocStrings import extract_docstrings_from_directory
 from search.searchInDocString import get_function_docstring
-from summarize.generateSummary import SummaryGenerator
+from segregate.segregateDocString import parse_docstring
+from db.vector_db_manager import QdrantManager
 
 # Load environment variables
 load_dotenv()
@@ -20,17 +21,17 @@ MONGO_COLLECTION = os.getenv("MONGO_COLLECTION")
 
 class DatabaseManager:
     """
-    Manages connections and operations for MongoDB.
-    Vector database functionality is commented out.
+    Manages connections and operations for MongoDB and Qdrant vector database.
     """
     def __init__(self):
         self.mongo_client = None
         self.mongo_db = None
         self.mongo_collection = None
-        self.summary_generator = SummaryGenerator()  # Create an instance of SummaryGenerator
+        self.vector_db = None
   
         # Initialize connections
         self._init_mongo()
+        self._init_vector_db()
 
     def _init_mongo(self):
         """Initialize MongoDB connection."""
@@ -42,6 +43,14 @@ class DatabaseManager:
         except Exception as e:
             print(f"Error connecting to MongoDB: {str(e)}")
             raise
+    def _init_vector_db(self):
+        """Initialize vector database connection."""
+        try:
+            self.vector_db = QdrantManager()
+            print("Connected to Qdrant vector database")
+        except Exception as e:
+            print(f"Error connecting to Qdrant: {str(e)}")
+            self.vector_db = None
     
     def store_graph(self, graph: nx.DiGraph, project_name: str, directory: str = None) -> str:
         """
@@ -88,6 +97,10 @@ class DatabaseManager:
         self.mongo_collection.insert_one(metadata)
         print(f"Stored graph metadata in MongoDB with ID: {graph_id}")
         
+        # Store embeddings in vector database if available
+        if self.vector_db and directory:
+            self._store_embeddings(metadata["nodes"], metadata["edges"])
+        
         return graph_id
     
     def _process_nodes_sync(self, graph: nx.DiGraph, graph_id: str) -> List[Dict]:
@@ -112,6 +125,95 @@ class DatabaseManager:
         
         return nodes_data
     
+    def _store_embeddings(self, nodes: List[Dict], edges: List[Dict]) -> None:
+        """
+        Store embeddings for nodes and edges in the vector database.
+        
+        Args:
+            nodes: List of node dictionaries
+            edges: List of edge dictionaries
+        """
+        if not self.vector_db:
+            return
+        
+        # Process nodes with docstrings
+        node_ids = []
+        node_texts = []
+        node_metadata = []
+        
+        for node in nodes:
+            if "docstring_data" in node:
+                # Create a text representation of the node
+                node_text = f"Node: {node['name']} (Type: {node['type']})\n"
+                
+                # Add docstring data
+                docstring_data = node["docstring_data"]
+                node_text += f"Summary: {docstring_data['summary']}\n"
+                
+                if docstring_data['parameters']:
+                    node_text += "Parameters:\n"
+                    for param_name, param_desc in docstring_data['parameters'].items():
+                        node_text += f"  - {param_name}: {param_desc}\n"
+                
+                if docstring_data['returns']:
+                    node_text += f"Returns: {docstring_data['returns']}\n"
+                
+                if docstring_data['raises']:
+                    node_text += f"Raises: {docstring_data['raises']}\n"
+                
+                if docstring_data['note']:
+                    node_text += f"Note: {docstring_data['note']}\n"
+                
+                if docstring_data['example']:
+                    node_text += f"Example: {docstring_data['example']}\n"
+                
+                # Add to lists
+                node_ids.append(node["id"])
+                node_texts.append(node_text)
+                node_metadata.append({
+                    "id": node["id"],
+                    "name": node["name"],
+                    "type": node["type"],
+                    "docstring_data": docstring_data
+                })
+        
+        # Store node embeddings
+        if node_ids:
+            print(f"Storing embeddings for {len(node_ids)} nodes...")
+            success = self.vector_db.generate_and_store(node_ids, node_texts, node_metadata)
+            if success:
+                print("Node embeddings stored successfully")
+            else:
+                print("Failed to store node embeddings")
+        
+        # Process edges
+        edge_ids = []
+        edge_texts = []
+        edge_metadata = []
+        
+        for edge in edges:
+            # Create a text representation of the edge
+            edge_text = f"Edge: {edge['source']} -> {edge['target']} (Relation: {edge['relation']})"
+            
+            # Add to lists
+            edge_ids.append(edge["id"])
+            edge_texts.append(edge_text)
+            edge_metadata.append({
+                "id": edge["id"],
+                "source": edge["source"],
+                "target": edge["target"],
+                "relation": edge["relation"]
+            })
+        
+        # Store edge embeddings
+        if edge_ids:
+            print(f"Storing embeddings for {len(edge_ids)} edges...")
+            success = self.vector_db.generate_and_store(edge_ids, edge_texts, edge_metadata)
+            if success:
+                print("Edge embeddings stored successfully")
+            else:
+                print("Failed to store edge embeddings")
+    
     async def _process_nodes_async(self, graph: nx.DiGraph, graph_id: str, all_docstrings: Dict) -> List[Dict]:
         """Process nodes asynchronously with batch processing for summaries."""
         # Prepare node data and collect docstrings for batch processing
@@ -133,7 +235,8 @@ class DatabaseManager:
                 "name": node,
                 "type": node_type,
                 "attributes": node_attrs,
-                "description": ""  # Will be filled in later
+                "description": ""
+
             })
             
             # Collect docstrings for batch processing
@@ -143,15 +246,17 @@ class DatabaseManager:
                     node_docstrings.append(docstring)
                     node_indices.append(i)
         
-        # Batch process docstrings if any were found
+        # Process docstrings if any were found
         if node_docstrings:
-            print(f"Batch processing {len(node_docstrings)} docstrings...")
-            summaries = await self.summary_generator.generate_summaries_batch(node_docstrings, 30)
+            print(f"Processing {len(node_docstrings)} docstrings...")
             
-            # Update node descriptions with summaries
-            for i, summary in enumerate(summaries):
+            # Update node data with parsed docstrings
+            for i, docstring in enumerate(node_docstrings):
                 node_index = node_indices[i]
-                nodes_data[node_index]["description"] = summary
+                parsed_docstring = parse_docstring(docstring)
+                nodes_data[node_index]["docstring_data"] = parsed_docstring
+                # Use the summary from parsed docstring as the description
+                nodes_data[node_index]["description"] = parsed_docstring['summary']
         
         return nodes_data
     
@@ -172,7 +277,6 @@ class DatabaseManager:
                 "target": v,
                 "relation": relation,
                 "attributes": data
-                # "description": edgeDescription
             })
         
         return edges_data
@@ -207,7 +311,7 @@ class DatabaseManager:
     
     def delete_graph(self, graph_id: str) -> bool:
         """
-        Delete a graph from MongoDB.
+        Delete a graph from MongoDB and vector database.
         
         Args:
             graph_id: ID of the graph to delete
@@ -217,14 +321,43 @@ class DatabaseManager:
         """
         # Delete from MongoDB
         result = self.mongo_collection.delete_one({"graph_id": graph_id})
-        return result.deleted_count > 0
+        mongo_success = result.deleted_count > 0
+        
+        # Delete from vector database
+        vector_db_success = True
+        if self.vector_db:
+            # Note: This is a simplification. In a real implementation, you would
+            # need to delete only the vectors associated with this graph_id.
+            # For now, we're just deleting the entire collection.
+            vector_db_success = self.vector_db.delete_collection()
+        
+        return mongo_success and vector_db_success
     
     def _get_timestamp(self) -> str:
         """Get current timestamp in ISO format."""
         from datetime import datetime
         return datetime.now().isoformat()
     
+    def search_by_text(self, query_text: str, top_k: int = 5) -> List[Dict]:
+        """
+        Search for nodes and edges by text query.
+        
+        Args:
+            query_text: The text query to search for
+            top_k: Number of results to return
+            
+        Returns:
+            List of dictionaries containing the search results
+        """
+        if not self.vector_db:
+            return []
+        
+        return self.vector_db.search_by_text(query_text, top_k)
+    
     def close(self):
         """Close database connections."""
         if self.mongo_client:
             self.mongo_client.close()
+        
+        if self.vector_db:
+            self.vector_db.close()

@@ -6,7 +6,8 @@ This script demonstrates how to use the DatabaseManager class to store and retri
 
 import os
 import networkx as nx
-from db_manager import DatabaseManager
+from db.db_manager import DatabaseManager
+from db.vector_db_manager import QdrantManager
 
 def create_sample_graph():
     """Create a sample graph for testing."""
@@ -82,48 +83,36 @@ def test_get_metadata(graph_id):
     else:
         print(f"No metadata found for graph ID: {graph_id}")
 
-# Vector database search functions commented out
-# def test_search_nodes():
-#     """Test searching for similar nodes."""
-#     db_manager = DatabaseManager()
-#     
-#     queries = [
-#         "file that contains user functions",
-#         "function that validates email",
-#         "utility functions"
-#     ]
-#     
-#     for query in queries:
-#         print(f"\nSearching for nodes similar to: '{query}'")
-#         results = db_manager.search_similar_nodes(query, top_k=3)
-#         
-#         if results:
-#             for i, result in enumerate(results):
-#                 print(f"{i+1}. {result['metadata']['name']} (Type: {result['metadata']['type']})")
-#                 print(f"   Score: {result['score']:.4f}")
-#         else:
-#             print("No results found")
-
-# def test_search_edges():
-#     """Test searching for similar edges."""
-#     db_manager = DatabaseManager()
-#     
-#     queries = [
-#         "main function calling user functions",
-#         "file importing utilities",
-#         "function that calls validation"
-#     ]
-#     
-#     for query in queries:
-#         print(f"\nSearching for edges similar to: '{query}'")
-#         results = db_manager.search_similar_edges(query, top_k=3)
-#         
-#         if results:
-#             for i, result in enumerate(results):
-#                 print(f"{i+1}. {result['metadata']['source']} -> {result['metadata']['target']} (Relation: {result['metadata']['relation']})")
-#                 print(f"   Score: {result['score']:.4f}")
-#         else:
-#             print("No results found")
+def test_vector_search():
+    """Test searching with vector database."""
+    db_manager = DatabaseManager()
+    
+    queries = [
+        "function that validates email",
+        "file that contains user functions",
+        "utility functions"
+    ]
+    
+    for query in queries:
+        print(f"\nSearching for: '{query}'")
+        results = db_manager.search_by_text(query, top_k=3)
+        
+        if results:
+            for i, result in enumerate(results):
+                print(f"{i+1}. Score: {result['score']:.4f}")
+                
+                # Check if this is a node or edge result
+                metadata = result['metadata']
+                if 'type' in metadata:  # Node
+                    print(f"Node: {metadata['name']} (Type: {metadata['type']})")
+                    
+                    if 'docstring_data' in metadata:
+                        docstring = metadata['docstring_data']
+                        print(f"Summary: {docstring['summary']}")
+                else:  # Edge
+                    print(f"Edge: {metadata['source']} -> {metadata['target']} (Relation: {metadata['relation']})")
+        else:
+            print("No results found")
 
 def test_list_graphs():
     """Test listing all graphs."""
@@ -156,12 +145,8 @@ def main():
     print("\n--- Retrieving Metadata ---")
     test_get_metadata(graph_id)
     
-    # Vector database search tests commented out
-    # print("\n--- Searching Nodes ---")
-    # test_search_nodes()
-    # 
-    # print("\n--- Searching Edges ---")
-    # test_search_edges()
+    print("\n--- Vector Database Search ---")
+    test_vector_search()
     
     print("\n--- Listing Graphs ---")
     test_list_graphs()

@@ -6,7 +6,7 @@ Models module for the application.
 This module defines the core data models used throughout the application,
 including User and Product classes with their associated methods.
 
-Author: Development Team
+Author: AI M.F.
 Copyright (c) 2025 Example Corp.
 License: MIT
 """

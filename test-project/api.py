@@ -7,7 +7,7 @@ This module provides API functions for user registration, product creation,
 and other operations. It serves as the interface between the application's
 core functionality and external clients.
 
-Author: Development Team
+Author: AI M.F.
 Copyright (c) 2025 Example Corp.
 License: MIT
 """

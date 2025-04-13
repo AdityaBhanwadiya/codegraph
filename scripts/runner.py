@@ -45,13 +45,17 @@ def parse_args():
     # Database options
     db_group = parser.add_argument_group('Database Options')
     db_group.add_argument('--store-db', action='store_true',
-                        help='Store graph data in MongoDB')
+                        help='Store graph data in MongoDB and vector database')
     db_group.add_argument('--project-name', default=None,
                         help='Project name for database storage')
     db_group.add_argument('--list-graphs', action='store_true',
                         help='List all stored graphs')
     db_group.add_argument('--delete-graph', default=None,
                         help='Delete a graph by ID')
+    db_group.add_argument('--search', default=None,
+                        help='Search for nodes and edges by text query')
+    db_group.add_argument('--top-k', type=int, default=5,
+                        help='Number of search results to return (default: 5)')
     
     return parser.parse_args()
 
@@ -60,7 +64,7 @@ def main():
     args = parse_args()
     
     # Handle database-only operations
-    if args.list_graphs or args.delete_graph:  # Removed search_nodes and search_edges
+    if args.list_graphs or args.delete_graph or args.search:
         db_manager = DatabaseManager()
         
         if args.list_graphs:
@@ -88,7 +92,39 @@ def main():
             
             db_manager.close()
             return
-    
+        
+        if args.search:
+            print(f"\nSearching for: '{args.search}'")
+            results = db_manager.search_by_text(args.search, args.top_k)
+            
+            if results:
+                print(f"\nFound {len(results)} results:")
+                for i, result in enumerate(results):
+                    print(f"\n{i+1}. Score: {result['score']:.4f}")
+                    
+                    # Check if this is a node or edge result
+                    metadata = result['metadata']
+                    if 'type' in metadata:  # Node
+                        print(f"Node: {metadata['name']} (Type: {metadata['type']})")
+                        
+                        if 'docstring_data' in metadata:
+                            docstring = metadata['docstring_data']
+                            print(f"Summary: {docstring['summary']}")
+                            
+                            if docstring['parameters']:
+                                print("Parameters:")
+                                for param_name, param_desc in docstring['parameters'].items():
+                                    print(f"  - {param_name}: {param_desc}")
+                            
+                            if docstring['returns']:
+                                print(f"Returns: {docstring['returns']}")
+                    else:  # Edge
+                        print(f"Edge: {metadata['source']} -> {metadata['target']} (Relation: {metadata['relation']})")
+            else:
+                print("No results found")
+            
+            db_manager.close()
+            return
     
     # Regular graph generation
     print(f"Parsing directory: {args.directory}")
@@ -120,7 +156,7 @@ def main():
         project_name = args.project_name or os.path.basename(os.path.abspath(args.directory))
         db_manager = DatabaseManager()
         graph_id = db_manager.store_graph(graph, project_name, args.directory)
-        print(f"Graph stored in MongoDB with ID: {graph_id}")
+        print(f"Graph stored in database with ID: {graph_id}")
         db_manager.close()
     
     # Determine visualization type
