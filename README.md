@@ -23,7 +23,7 @@ pip install -r requirements.txt
 Or install them manually:
 
 ```bash
-pip install networkx matplotlib watchdog pyvis pymongo sentence-transformers pinecone-client python-dotenv
+pip install networkx matplotlib watchdog pyvis pymongo sentence-transformers Qdrant-client python-dotenv
 ```
 
 For the hierarchical layout, you'll also need:
@@ -38,8 +38,8 @@ Note: Installing pygraphviz may require additional system dependencies (graphviz
 
 - **MongoDB**: For storing graph metadata
   - Local installation or MongoDB Atlas cloud account
-- **Pinecone**: For storing vector embeddings
-  - Requires a Pinecone account and API key (free tier available)
+- **Qdrant**: For storing vector embeddings
+  - Requires a Qdrant account and API key (free tier available)
 - **Sentence Transformers**: For generating embeddings
   - Automatically installed with the requirements
 
@@ -142,7 +142,7 @@ The project now supports storing graph data in MongoDB (for metadata) and a vect
 cp .env.example .env
 ```
 
-2. Edit the `.env` file to include your MongoDB connection string and Pinecone API key:
+2. Edit the `.env` file to include your MongoDB connection string and Qdrant API key:
 
 ```
 # MongoDB connection
@@ -150,10 +150,10 @@ MONGO_URI=mongodb://localhost:27017
 MONGO_DB_NAME=code_graph_db
 MONGO_COLLECTION=graph_metadata
 
-# Pinecone connection
-PINECONE_API_KEY=your-pinecone-api-key
-PINECONE_ENVIRONMENT=us-west1-gcp
-PINECONE_INDEX_NAME=code-graph-embeddings
+# Qdrant connection
+Qdrant_API_KEY=your-Qdrant-api-key
+Qdrant_ENVIRONMENT=us-west1-gcp
+Qdrant_INDEX_NAME=code-graph-embeddings
 
 # Embedding model
 EMBEDDING_MODEL=all-MiniLM-L6-v2
@@ -217,4 +217,4 @@ python runner.py --delete-graph <graph_id>
 - If there are too many built-in function calls cluttering the graph, use the default settings which exclude them
 - Use the `--filter` option to show only specific types of relationships (e.g., `--filter contains calls` to show only file-function and function-function relationships)
 - If you encounter database connection issues, check your `.env` file and ensure your MongoDB server is running
-- For vector database operations, ensure you have a valid Pinecone API key
+- For vector database operations, ensure you have a valid Qdrant API key
